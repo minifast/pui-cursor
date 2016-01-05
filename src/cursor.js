@@ -25,14 +25,19 @@ class Cursor {
     debug = bool;
   }
 
-  constructor(data, callback, {path = [], state = {updates: [], data}} = {}) {
-    privates.set(this, {data, callback, path, state});
+  constructor(data, {path = [], listeners = [], state = {updates: [], data}} = {}) {
+    privates.set(this, {data, listeners, path, state});
+  }
+
+  onCommit(callback) {
+    let {data, listeners, path, state} = privates.get(this);
+    privates.set(this, {data, listeners: listeners.concat(callback), path, state});
   }
 
   refine(...query) {
-    let {callback, data, path, state} = privates.get(this);
+    let {listeners, data, path, state} = privates.get(this);
     query = query.reduce((memo, p) => (memo.push(isObject(p) ? (this.get(...memo)).indexOf(p) : p), memo), []);
-    return new Cursor(data, callback, {path: path.concat(query), state});
+    return new Cursor(data, {path: path.concat(query), listeners, state});
   }
 
   get(...morePath) {
@@ -83,13 +88,13 @@ class Cursor {
   }
 
   flush() {
-    const {callback, state} = privates.get(this);
+    let {listeners, state} = privates.get(this);
     if (!state.updates.length) return this;
     const fn = flow(...state.updates);
     state.updates = [];
     state.data = fn.call(this, state.data);
     if (Cursor.async) state.stale = true;
-    callback(state.data);
+    listeners.forEach(listener => listener(state.data));
     return this;
   }
 

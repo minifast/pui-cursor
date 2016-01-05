@@ -7,7 +7,8 @@ describe('Cursor', function() {
     cells = [{cell_id: 4}, {cell_id: 32}, {cell_id: 44}];
     data = {scaling: 'containers', cells, desiredLrps: []};
     callbackSpy = jasmine.createSpy('callback');
-    subject = new Cursor(data, callbackSpy);
+    subject = new Cursor(data);
+    subject.onCommit(callbackSpy);
   });
 
   describe('with async true', function() {
@@ -54,7 +55,8 @@ describe('Cursor', function() {
           nested = [{id: 1}, {id: 2}];
           cells = [{cell_id: 4}, {cell_id: 32, nested}, {cell_id: 44}];
           data = {cells};
-          subject = new Cursor(data, callbackSpy);
+          subject = new Cursor(data);
+          subject.onCommit(callbackSpy);
         });
 
         it('returns the expected cursor', function() {
@@ -147,7 +149,7 @@ describe('Cursor', function() {
 
     describe('#isEqual', function() {
       it('returns true when the cursors are the same', function() {
-        const anotherCursor = new Cursor(data, jasmine.createSpy('callback'));
+        const anotherCursor = new Cursor(data);
         expect(subject.isEqual(anotherCursor)).toBe(true);
         expect(subject.isEqual(anotherCursor.refine('scaling'))).toBe(false);
       });
