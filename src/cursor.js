@@ -1,4 +1,3 @@
-const flow = require('lodash.flow');
 const reactUpdate = require('react-addons-update');
 
 let async = true;
@@ -13,8 +12,8 @@ class Atom {
     return obj instanceof Atom;
   }
 
-  constructor(data, listeners = []) {
-    privates.set(this, {data, listeners, updates: []});
+  constructor(data, callback) {
+    privates.set(this, {data, callback, log: [], stamp: 0});
   }
 
   get() {
@@ -22,25 +21,18 @@ class Atom {
     return data;
   }
 
-  onCommit(callback) {
-    let {updates, listeners, data} = privates.get(this);
-    privates.set(this, {updates, listeners: listeners.concat(callback), data});
+  commit() {
+    let {log, callback, data, stamp} = privates.get(this);
+    if (log.length === stamp) return;
+    data = log.slice(stamp).reduce(reactUpdate, data);
+    stamp = log.length;
+    callback(data);
+    privates.set(this, {log, callback, data, stamp});
   }
 
-  flush() {
-    let {updates, listeners, data} = privates.get(this);
-    if (updates.length > 0) {
-      let fn = flow(...updates);
-      data = fn.call(this, data);
-      listeners.forEach(listener => listener(data));
-    }
-    privates.set(this, {updates: [], listeners, data});
-  }
-
-  update(query) {
-    let {updates, listeners, data} = privates.get(this);
-    updates.push(data => reactUpdate(data, query));
-    privates.set(this, {updates, listeners, data});
+  append(entry) {
+    let {log, callback, data, stamp} = privates.get(this);
+    privates.set(this, {log: log.concat(entry), callback, data, stamp});
   }
 }
 
@@ -53,21 +45,15 @@ class Cursor {
     async = bool;
   }
 
-  constructor(data, path = []) {
-    let atom = Atom.isAtom(data) ? data : new Atom(data);
+  constructor(data, callback, path = []) {
+    let atom = Atom.isAtom(data) ? data : new Atom(data, callback);
     privates.set(this, {atom, path});
-  }
-
-  onCommit(callback) {
-    let {atom} = privates.get(this);
-    atom.onCommit(callback);
-    return this;
   }
 
   refine(...query) {
     let {atom, path} = privates.get(this);
     query = query.reduce((memo, p) => (memo.push(isObject(p) ? (this.get(...memo)).indexOf(p) : p), memo), []);
-    return new Cursor(atom, path.concat(query));
+    return new Cursor(atom, null, path.concat(query));
   }
 
   get(...morePath) {
@@ -119,16 +105,16 @@ class Cursor {
 
   flush() {
     const {atom} = privates.get(this);
-    atom.flush();
+    atom.commit();
     return this;
   }
 
   update(options) {
     const {atom, path} = privates.get(this);
     const query = path.reduceRight((memo, step) => ({[step]: {...memo}}), options);
-    atom.update(query);
+    atom.append(query);
     if (Cursor.async) {
-      this.nextTick(atom.flush.bind(atom));
+      this.nextTick(atom.commit.bind(atom));
       return this;
     }
     return this.flush();
