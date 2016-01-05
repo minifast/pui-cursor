@@ -1,11 +1,47 @@
 const flow = require('lodash.flow');
 const reactUpdate = require('react-addons-update');
 
-let async = true, debug = true;
+let async = true;
 const privates = new WeakMap();
 
 function isObject(obj) {
   return typeof obj === 'object';
+}
+
+class Atom {
+  static isAtom(obj) {
+    return obj instanceof Atom;
+  }
+
+  constructor(data, listeners = []) {
+    privates.set(this, {data, listeners, updates: []});
+  }
+
+  get() {
+    let {data} = privates.get(this);
+    return data;
+  }
+
+  onCommit(callback) {
+    let {updates, listeners, data} = privates.get(this);
+    privates.set(this, {updates, listeners: listeners.concat(callback), data});
+  }
+
+  flush() {
+    let {updates, listeners, data} = privates.get(this);
+    if (updates.length > 0) {
+      let fn = flow(...updates);
+      data = fn.call(this, data);
+      listeners.forEach(listener => listener(data));
+    }
+    privates.set(this, {updates: [], listeners, data});
+  }
+
+  update(query) {
+    let {updates, listeners, data} = privates.get(this);
+    updates.push(data => reactUpdate(data, query));
+    privates.set(this, {updates, listeners, data});
+  }
 }
 
 class Cursor {
@@ -17,32 +53,26 @@ class Cursor {
     async = bool;
   }
 
-  static get debug() {
-    return debug;
-  }
-
-  static set debug(bool) {
-    debug = bool;
-  }
-
-  constructor(data, {path = [], listeners = [], state = {updates: [], data}} = {}) {
-    privates.set(this, {data, listeners, path, state});
+  constructor(data, path = []) {
+    let atom = Atom.isAtom(data) ? data : new Atom(data);
+    privates.set(this, {atom, path});
   }
 
   onCommit(callback) {
-    let {data, listeners, path, state} = privates.get(this);
-    privates.set(this, {data, listeners: listeners.concat(callback), path, state});
+    let {atom} = privates.get(this);
+    atom.onCommit(callback);
+    return this;
   }
 
   refine(...query) {
-    let {listeners, data, path, state} = privates.get(this);
+    let {atom, path} = privates.get(this);
     query = query.reduce((memo, p) => (memo.push(isObject(p) ? (this.get(...memo)).indexOf(p) : p), memo), []);
-    return new Cursor(data, {path: path.concat(query), listeners, state});
+    return new Cursor(atom, path.concat(query));
   }
 
   get(...morePath) {
-    const {data, path} = privates.get(this);
-    return path.concat(morePath).reduce((memo, step) => memo[step], data);
+    const {atom, path} = privates.get(this);
+    return path.concat(morePath).reduce((memo, step) => memo[step], atom.get());
   }
 
   isEqual(otherCursor) {
@@ -88,24 +118,20 @@ class Cursor {
   }
 
   flush() {
-    let {listeners, state} = privates.get(this);
-    if (!state.updates.length) return this;
-    const fn = flow(...state.updates);
-    state.updates = [];
-    state.data = fn.call(this, state.data);
-    if (Cursor.async) state.stale = true;
-    listeners.forEach(listener => listener(state.data));
+    const {atom} = privates.get(this);
+    atom.flush();
     return this;
   }
 
   update(options) {
-    const {path, state: {updates, stale}} = privates.get(this);
-    if (Cursor.debug && stale) console.warn('You are updating a stale cursor, this is almost always a bug');
+    const {atom, path} = privates.get(this);
     const query = path.reduceRight((memo, step) => ({[step]: {...memo}}), options);
-    updates.push(data => reactUpdate(data, query));
-    if (!Cursor.async) return this.flush();
-    if (updates.length === 1) this.nextTick(this.flush.bind(this));
-    return this;
+    atom.update(query);
+    if (Cursor.async) {
+      this.nextTick(atom.flush.bind(atom));
+      return this;
+    }
+    return this.flush();
   }
 }
 

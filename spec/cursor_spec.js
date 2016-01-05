@@ -343,7 +343,7 @@ describe('Cursor', function() {
 
     describe('#isEqual', function() {
       it('returns true when the cursors are the same', function() {
-        const anotherCursor = new Cursor(data, jasmine.createSpy('callback'));
+        const anotherCursor = new Cursor(data);
         expect(subject.isEqual(anotherCursor)).toBe(true);
         expect(subject.isEqual(anotherCursor.refine('scaling'))).toBe(false);
       });
@@ -374,11 +374,11 @@ describe('Cursor', function() {
         expect(callbackSpy.calls.mostRecent().args[0]).toEqual(jasmine.objectContaining({hi: 5, bye: 4}));
       });
 
-      it('does not mutate the data', function() {
+      it('applies the updates to the atom', function() {
         subject.merge({hi: 5});
         subject.merge({bye: 3});
-        expect(subject.get()).not.toEqual(jasmine.objectContaining({hi: 5}));
-        expect(subject.get()).not.toEqual(jasmine.objectContaining({bye: 3}));
+        expect(subject.get()).toEqual(jasmine.objectContaining({hi: 5}));
+        expect(subject.get()).toEqual(jasmine.objectContaining({bye: 3}));
       });
 
       describe('#refine', function() {
@@ -404,52 +404,6 @@ describe('Cursor', function() {
           subject.merge({foo: 4});
           expect(callbackSpy).toHaveBeenCalledWith(jasmine.objectContaining({hi: 5, bye: 3,foo: 4}));
         });
-      });
-    });
-  });
-
-  describe('with debug mode false', function() {
-    beforeEach(function() {
-      Cursor.debug = false;
-    });
-
-    describe('with a stale cursor', function() {
-      beforeEach(function() {
-        Cursor.async = true;
-        spyOn(Cursor.prototype, 'nextTick').and.callFake(cb => setTimeout(cb, 0));
-
-        spyOn(console, 'warn');
-        subject.set({foo: 'bar'});
-        jasmine.clock().tick(1);
-        expect(console.warn).not.toHaveBeenCalled();
-      });
-
-      it('does not warn users about using it', function() {
-        subject.merge({foo: 'baz'});
-        expect(console.warn).not.toHaveBeenCalled();
-      });
-    });
-  });
-
-  describe('with debug mode true', function() {
-    beforeEach(function() {
-      Cursor.debug = true;
-    });
-
-    describe('with a stale cursor', function() {
-      beforeEach(function() {
-        Cursor.async = true;
-        spyOn(Cursor.prototype, 'nextTick').and.callFake(cb => setTimeout(cb, 0));
-
-        spyOn(console, 'warn');
-        subject.set({foo: 'bar'});
-        jasmine.clock().tick(1);
-        expect(console.warn).not.toHaveBeenCalled();
-      });
-
-      it('warns users about using it', function() {
-        subject.merge({foo: 'baz'});
-        expect(console.warn).toHaveBeenCalled();
       });
     });
   });
